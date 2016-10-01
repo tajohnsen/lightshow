@@ -31,7 +31,9 @@ int isdigit(int);
 int toupper(int);
 size_t strlen(const char *);
 
-byte ledPin[] = {13, 12, 11, 10, 9, 8, 7, 6};//, 5, 4}; //array of pins used in this project.
+/* array of pins used in this project.
+ * This order sets each PWM capable pin (on most Arduinos) to every other one. */
+byte ledPin[] = {13, 11, 12, 10, 8, 9, 7, 6};//, 4, 5, 2, 3}; 
 int sensor = A3;  // potentiometer analog sensor
 
 void setup() {
