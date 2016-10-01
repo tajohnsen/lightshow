@@ -30,8 +30,8 @@ int isdigit(int);
 int toupper(int);
 size_t strlen(const char *);
 
-byte ledPin[] = {13, 12, 11, 10, 9, 8, 7, 6};//, 5, 4};
-int sensor = A3;
+byte ledPin[] = {13, 12, 11, 10, 9, 8, 7, 6};//, 5, 4}; //array of pins used in this project.
+int sensor = A3;  // potentiometer analog sensor
 
 void setup() {
     //set all pins to output
@@ -44,35 +44,47 @@ void setup() {
     #elif TROUBLESHOOTHB
     Serial.begin(9600); //for troubleshooting
     #endif
-    //changeTime = millis();
+    // use analog0 to seed the random timer
+    // ensure A0 is empty!
     randomSeed(analogRead(0));
 }
 
+// boolean comparison of integers.  is x < y?
+// used for reversing the direction of loops
 inline bool lt(int x, int y)
 {
     return (x < y);
 }
 
+// boolean comparison of integers.  is x > y?
+// used for reversing the direction of loops
 inline bool gt(int x, int y)
 {
     return (x > y);
 }
 
+// boolean comparison of unsigned longs.  is x < y?
+// used for reversing the direction of loops
 inline bool ul_lt(unsigned long x, unsigned long y)
 {
     return (x < y);
 }
 
+// boolean comparison of unsigned longs.  is x > y?
+// used for reversing the direction of loops
 inline bool ul_gt(unsigned long x, unsigned long y)
 {
     return (x > y);
 }
 
+// simple function to turn off a specific pin.
+// int pin refers to the index of pin in the led array
 inline void ZeroPin(int pin)
 {
     digitalWrite(ledPin[pin], LOW);
 }
 
+// simple function to turn off all LEDs
 static inline void AllOff()
 {
     for (int i=0; i<sizeof(ledPin); i++)
@@ -81,6 +93,7 @@ static inline void AllOff()
     }
 }
 
+//simple function to turn on all LEDs
 static inline void AllOn()
 {
     for (int i=0; i<sizeof(ledPin); i++)
@@ -89,11 +102,17 @@ static inline void AllOn()
     }
 }
 
+// simple function to perform a change on an LED pin.
+// int onOff is 0 or 1 (LOW or HIGH)
+// int pin is the index of the pin in the global array
 inline void PinOp(int onOff, int pin)
 {
     digitalWrite(ledPin[pin], onOff);
 }
 
+// turn a specific pin on, wait for a specified time, then turn it off.
+// int pin - index number of pin in the array
+// float rate - rate of delay multiple
 inline void BlinkPin(int pin, float rate)
 {
     PinOp(HIGH, pin);
@@ -101,15 +120,20 @@ inline void BlinkPin(int pin, float rate)
     PinOp(LOW, pin);
 }
 
+// convert an integer to display it as a binary number on the LEDs
+// int value is the integer value to display.
 void IntToPin(int value)
 {
     //Get a value and display the binary value
     for (int i=0; i<sizeof(ledPin); i++)
     {
-        PinOp(value & (1<<i), i);
+        PinOp(value & (1<<i), i); //and the value with 2^i, will be 1 if the bit is on
     }
 }
 
+// swap integers and change the direction of a loop.
+// int a and b are pointers to be swapped
+// direction is a pointer to the direction multiple have its sign switched. 
 inline void swap(int *a, int *b, int *direction)
 {
     int temp;
