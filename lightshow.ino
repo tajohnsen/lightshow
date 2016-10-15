@@ -27,6 +27,7 @@
 #define SECONDS 15      //seconds to run each show.
 #include <stdio.h>
 #include "Morse.h"
+
 int isdigit(int);
 int toupper(int);
 size_t strlen(const char *);
@@ -50,6 +51,12 @@ void setup() {
     // use analog0 to seed the random timer
     // ensure A0 is empty!
     randomSeed(analogRead(0));
+}
+
+//takes a previous time, a time in seconds that's the goal, and compares it using a comparison function
+static inline bool timer(unsigned long then, unsigned long seconds, bool (*comparison)(unsigned long, unsigned long))
+{
+    return ((*comparison)(millis() - then, seconds*1000));
 }
 
 // boolean comparison of integers.  is x < y?
@@ -82,7 +89,7 @@ inline bool ul_gt(unsigned long x, unsigned long y)
 
 // simple function to turn off a specific pin.
 // int pin refers to the index of pin in the led array
-inline void ZeroPin(int pin)
+static inline void ZeroPin(int pin)
 {
     digitalWrite(ledPin[pin], LOW);
 }
@@ -108,7 +115,7 @@ static inline void AllOn()
 // simple function to perform a change on an LED pin.
 // int onOff is 0 or 1 (LOW or HIGH)
 // int pin is the index of the pin in the global array
-inline void PinOp(int onOff, int pin)
+static inline void PinOp(int onOff, int pin)
 {
     digitalWrite(ledPin[pin], onOff);
 }
@@ -116,7 +123,7 @@ inline void PinOp(int onOff, int pin)
 // turn a specific pin on, wait for a specified time, then turn it off.
 // int pin - index number of pin in the array
 // float rate - rate of delay multiple
-inline void BlinkPin(int pin, float rate)
+static inline void BlinkPin(int pin, float rate)
 {
     PinOp(HIGH, pin);
     delay(analogRead(sensor)*rate);
@@ -146,67 +153,71 @@ inline void swap(int *a, int *b, int *direction)
     *b = temp;
 }
 
-void NPlusOne(int seconds)
+// lights up one pin at a time, then two, then three, etc.
+void NPlusOne(unsigned long seconds)
 {
-    unsigned long then = millis();
-    int MIN=0;
-    int MAX=sizeof(ledPin);
-    int direction=1;
-    bool (*comparison)(int, int) = &lt;
-    void (*ranger)(int) = &PinRangeOn;
+    unsigned long then = millis();  //timed show, get before time to do math later
+    int MIN=0;              //min and max will swap when changing directions
+    int MAX=sizeof(ledPin); 
+    int direction=1;        //sign will change i+1 into i-1
+    bool (*comparison)(int, int) = &lt; //pointer to comparison function (lt on way up, gt on way down)
+    void (*ranger)(int) = &PinRangeOn;  //pointer to function that turns LEDs on and off, depending on direction
 
-    while(1)
+    while(1)  //loop breaks after argument seconds is reached.
     {
         for(int i=MIN; (*comparison)(i, MAX); i=i+direction)
         {
-            ranger(i);
+            ranger(i);  //Turn LEDs on ascending or descending depending on direction
             if(timer(then, seconds, &ul_gt))
-            return;
+              {return;} //return when time is up
         }
-        swap(&MIN, &MAX, &direction);
-        MIN += direction;
-        MAX += direction;
-        comparison = (direction < 0) ? &gt : &lt;
-        ranger = (direction < 0) ? &PinRangeOff : &PinRangeOn;
+        swap(&MIN, &MAX, &direction); //swap direction
+        MIN += direction; //adjust MIN and MAX so that they don't dip below...
+        MAX += direction; //...or above actual range available.
+        comparison = (direction < 0) ? &gt : &lt; //swap comparison function pointer
+        ranger = (direction < 0) ? &PinRangeOff : &PinRangeOn;  //swap on or off function pointer
     }
 }
 
+//Turn LEDs on in ascending direction.
 void PinRangeOn(int pindex)
 {
-    for(int i=0; i<sizeof(ledPin); i+=(pindex+1))
+    for(int i=0; i<sizeof(ledPin); i+=(pindex+1)) //increase outer loop by pindex
     {
-        for(int j=i; j<(i+pindex+1) && j<sizeof(ledPin); j++)
+        for(int j=i; j<(i+pindex+1) && j<sizeof(ledPin); j++) //start turning leds on at position of outer loop
         {
             PinOp(1, j);
             delay(analogRead(sensor));
         }
-        AllOff();
+        AllOff(); //turn all LEDs off between passes (could do i-j but this saves on space)
     }
 }
 
+//Turn LEDs on in descending order
 void PinRangeOff(int pindex)
 {
-    for (int i=sizeof(ledPin)-1; i >= 0; i-= (pindex+1))
+    for (int i=sizeof(ledPin)-1; i >= 0; i-= (pindex+1))  //start at top and work down, decrease by pindex+1
     {
-        for (int j=i; j>(i-pindex-1) && j>=0; j--)
+        for (int j=i; j>(i-pindex-1) && j>=0; j--)  //start at outer loop, turn on LEDs one by one.
         {
             PinOp(1, j);
             delay(analogRead(sensor));
         }
-        AllOff();
+        AllOff(); //turn all LEDs off between passes (could do i-j but this saves on space)
     }
 }
 
+//display numbers in binary.
+//argument 1 seconds is the number of seconds to run the loop
+//argument 2 is whether or not to allow counting in reverse
 void BinaryCounter(unsigned long seconds, bool countDown)
 {
-    //binary counter
-    //arguments:  seconds to run, option to count down.
-    int i;
-    int MIN = 0;
-    int MAX = 1 << sizeof(ledPin);
+    int i;  //counter in for loops.
+    int MIN = 0;  //start at 0
+    int MAX = 1 << sizeof(ledPin);  //max is 2^(number of LEDs)
     int direction = 1;  //will be -1 when counting down
-    unsigned long then = millis();
-    bool (*comparison)(int, int) = &lt;
+    unsigned long then = millis();  //for timing to exit loop, get start time
+    bool (*comparison)(int, int) = &lt; //pointer to comparison, lt for going up, gt for going down
     
     while (1)   //will break when time requirement met
     {
@@ -219,109 +230,116 @@ void BinaryCounter(unsigned long seconds, bool countDown)
                 return;
             }
         }
-        delay(750);
-        if (countDown)
+        delay(750); //set time between reaching max and restarting/changing directions
+        if (countDown)  //if argument set
         {
-            direction *= -1;
-            comparison = (direction < 0) ? &gt : &lt;
-            i = MIN;
-            MIN = MAX + direction;  // new max will be min - 1 (or back to original)
-            MAX = i + direction;  // same with min
+            swap(&MIN, &MAX, &direction);  //reverse direction
+            MIN += direction; //adjust so count doesn't go out of range
+            MAX += direction; //same with this one...
+            comparison = (direction < 0) ? &gt : &lt; //swap comparison function 
         }
     }
 }//*/
 
+//flip every other LED on and off.
 void PotFlip(unsigned long seconds)
 {
-    int count=0;
-    int x = 0;  //off pins
-    int y = 1;  //on pins ... initially
+    //bytes to keep track of on and off pins, can make this one byte but may not be worth the effort
+    byte x = 0;  //off pins
+    byte y = 1;  //on pins ... initially
     
-    unsigned long now = millis();
-    
-    while((millis() - now) < (seconds * 1000))
+    unsigned long start = millis(); //start time, loop exits after argument seconds
+
+    while(timer(start, seconds, &ul_lt))  //break when time reaches seconds
     {
-        x ^= 1; //flip status
-        y ^= 1; //flip status
-        for (int i=0; i<sizeof(ledPin); i++)
+        x ^= 1; //flip status, i.e. - if 1, 1 xor 1 = 0
+        y ^= 1; //flip status         if 0, 0 xor 1 = 1
+        for (byte i=0; i<sizeof(ledPin); i++)
         {
-            PinOp((i&1) ? x : y, i);
+            PinOp((i&1) ? x : y, i);  //if odd, x, else y (x and y flip each pass)
         }
         delay(analogRead(sensor));
     }
 }
 
+//stack LEDs ON going to the LEFT
 void StackOnL()
 {
-    int MAX = sizeof(ledPin);
-    int MIN = 0;
-    for (int top=MAX; top>MIN; top--)
+    char MAX = sizeof(ledPin); //end at highest LED
+    for (char top=MAX; top>0; top--)  //end at the top and work down for stack effect
     {
-        for(int pin=0; pin < top; pin++)
+        for(char pin=0;; pin++) //start at 0 and go up to top
         {
-            PinOp(1, pin);
-            delay(analogRead(sensor));
-            if (pin != (top-1))
+            if (pin != (top-1)) //if this isn't the last LED
             {
-                PinOp(0, pin);  //don't turn off the last one
+                BlinkPin(pin, 1);   //flash on then off
+            }
+            else  //if this is the last LED
+            {
+                PinOp(1, pin);  //turn it on and leave it on.
+                delay(analogRead(sensor));  //still need the delay
+                break;  //break from inner loop
             }
         }
     }
 }
-        
+
+//turn OFF LEDs going to the LEFT
 void StackOffL()
 {
-    int MAX = sizeof(ledPin);
-    for (int top=0; top<MAX; top++)
+    char MAX = sizeof(ledPin);  //end at highest LED
+    for (char top=0; top<MAX; top++)  //end at the lowest
     {
-        for(int pin=top; pin > -1; pin--)
-        {
-            PinOp(1, pin);
-            delay(analogRead(sensor));
-            PinOp(0, pin);
+        for(char pin=top; pin > -1; pin--)  //start from top and get smaller each pass
+          //must be char because value goes to -1
+        { //flash pin on then off
+            BlinkPin(pin, 1);
         }
     }
 }
-
+//turn LEDs on going to the right
 void StackOnR()
 {
-    int MAX = sizeof(ledPin);
-    for (int top=0; top<MAX; top++)
+    char MAX = sizeof(ledPin);  //start from highest LED
+    for (char top=0; top<MAX; top++)  //end at top
     {
-        for(int pin=MAX-1; pin > top-1; pin--)
+        for(char pin=MAX-1;; pin--) //start at highest and gradually get smaller
         {
-            PinOp(1, pin);
-            delay(analogRead(sensor));
-            if (pin != top)
+            if (pin != top) //if this isn't the last LED
             {
-                PinOp(0, pin);  //don't turn off the last one
+                BlinkPin(pin, 1);   //flash on then off
+            }
+            else  //if this is the last LED
+            {
+                PinOp(1, pin);  //turn it on and leave it on.
+                delay(analogRead(sensor));  //still need the delay
+                break;  //break from inner loop
             }
         }
     }
 }
 
+//turn OFF LEDs going to the RIGHT
 void StackOffR()
 {
-    int MAX = sizeof(ledPin);
-    int MIN = 0;
-    for (int top=MAX-1; top>MIN-1; top--)
+    char MAX = sizeof(ledPin);
+    for (char top=MAX-1; top>-1; top--) //start at top and get smaller
     {
-        for(int pin=top; pin < MAX; pin++)
-        {
-            PinOp(1, pin);
-            delay(analogRead(sensor));
-            PinOp(0, pin);
+        for(char pin=top; pin < MAX; pin++)
+        { //flash pin on then off
+            BlinkPin(pin, 1);
         }
     }
 }
 
+//stack LEDs on and off and in each direction
 void Stack(unsigned long seconds)
 {
-    int count = 0;
+    byte count = 0; //tracks 0-3 for each case
     unsigned long start = millis();
     
     while (timer(start, seconds, &ul_lt))
-    {
+    { //loops until seconds are up
         switch(count)
         {
             case 0:
@@ -336,60 +354,55 @@ void Stack(unsigned long seconds)
             case 3:
                 StackOffR();
         }
-        count++;
-        count %= 4;
+        count++;    //increment counter
+        count %= 4; //stay between 0-3
     }
 }
 
-void Linear(int seconds)
+//turn LEDs on in order
+void Linear(unsigned long seconds)
 {
     unsigned long then = millis();
-    int i = 0;
+    byte i = 0;
     
     while(timer(then, seconds, &ul_lt))
     {
-        BlinkPin(i++ % sizeof(ledPin),1);
-        /*PinOp(1, i % sizeof(ledPin));
-        delay(analogRead(sensor));
-        PinOp(0, i % sizeof(ledPin));*/
+        i %= sizeof(ledPin);  //ensure i stays within range of LED array
+        BlinkPin(i,1);
+        i++;                  //go to next i after blinking
     }
 }
 
-void PingPong(int seconds)
+//bounce single LED back and forth with a slight pause at each end
+void PingPong(unsigned long seconds)
 {
-    float rate_pin = .1; //rate per pin
-    unsigned long then = millis();
+    float rate_pin = .1; //rate per pin (float is expensive atmel chip)
     int MIN = 0;
     int MAX = sizeof(ledPin)-1;
-    int i=MIN;  //for swapping as well
+    int i=MIN;  //for loop
     int direction = 1;  //+1 counts up, -1 counts down
-    bool (*comparison)(int, int) = &lt;
+    bool (*comparison)(int, int) = &lt; //pointer for comparison when switching directions
+    unsigned long then = millis();  //time before starting
     
-    while(timer(then, seconds, &ul_lt))
+    while(timer(then, seconds, &ul_lt)) //run until over seconds argument
     {
         for (; (*comparison)(i,MAX); i+=direction)
         {
             BlinkPin(i, rate_pin);
         }
-        PinOp(1, MAX);
+        PinOp(1, MAX);  //quickly turn last LED back on
         delay(analogRead(sensor));   //sleep longer for end
-        direction *= -1;    //switch directions
+        i = MAX;  //store MAX in i for next pass in for loop
+        swap(&MIN, &MAX, &direction);  //reverse direction
         comparison = (direction < 0) ? &gt : &lt;
-        i = MAX;
-        MAX = MIN;
-        MIN = i;
     }
 }
 
-inline bool timer(unsigned long then, int seconds, bool (*comparison)(unsigned long, unsigned long))
+//Completely random display
+void Bogo(unsigned long seconds)
 {
-    return ((*comparison)(millis() - then, seconds*1000));
-}
-
-void Bogo(int seconds)
-{
-    unsigned long then = millis();
-    while (timer(then, seconds, &ul_lt))
+    unsigned long then = millis();  //get time to start
+    while (timer(then, seconds, &ul_lt))  //run until reaching the end of the time in seconds
     {
         for (int i=0; i<sizeof(ledPin); i++)
         {
@@ -399,43 +412,44 @@ void Bogo(int seconds)
     }
 }
 
+//flash Morse code letter using array in Morse.h
 void LetterFlash(char letter)
 {
     char index, i;
     if (isdigit(letter))
     {
-        index = 26 + letter - '0';
+        index = 26 + letter - '0';  //numbers start after alphabet in array
     }
     else if (isalpha(letter))
     {
-        index = toupper(letter) - 'A';
+        index = toupper(letter) - 'A';  //index in array, 0=A - 25=Z
     }
-    else
+    else  //if it isn't a number or letter just leave for now
     {
         return; //leave since theres nothing to write
     }
-    for (i=0; i<strlen(MorseCode[index]); i++)
+    for (i=0; i<strlen(MorseCode[index]); i++)  //using index, get Morse code, display each . or -
     {
-        AllOn();
-        if(MorseCode[index][i] == '.')
+        AllOn();  //turn all on no matter what
+        if(MorseCode[index][i] == '.')  //if it's a dot...
         {
-            delay(DIT * analogRead(sensor)*12);
+            delay(DIT * analogRead(sensor)*12); //delay is at the DIT rate
         }
-        else if (MorseCode[index][i] == '-')
+        else if (MorseCode[index][i] == '-')  //if it's a dash...
         {
-            delay(DAH * analogRead(sensor)*12);
+            delay(DAH * analogRead(sensor)*12); //delay is at the DAH rate
         }
-        AllOff();
+        AllOff();  //Turn off after delay
         delay(DIT * analogRead(sensor)*12);  //delay between each char
-        //printf("%c\n", MorseCode[index][i]);
     }
 }
 
+//Flash a whole sentence
 void MorseFlash(char * sentence)
 {
-    for(int i=0; i<strlen(sentence); i++)
+    for(int i=0; i<strlen(sentence); i++) //for each letter in the sentence
     {
-        if (isalnum)
+        if (isalnum)  //if it's a letter or number
         {
             LetterFlash(sentence[i]);
         }
@@ -443,35 +457,42 @@ void MorseFlash(char * sentence)
         { //most likely a space, delay otherwise
             delay(((DAH*2)+DIT) * analogRead(sensor)*12);
         }
-        delay(DAH * analogRead(sensor)*12);
+        delay(DAH * analogRead(sensor)*12); //delay after each letter
     }
 }
 
-void HeartBeat(int seconds)
+//show off PWC for analog display
+/* First half:
+ *   rises from completely off to all the way on,
+ *   lowers half way,
+ *   goes all the way back up,
+ *   goes all the way back off.
+ * 
+ * sleeps for second half
+  */
+void HeartBeat(unsigned long seconds)
 {
     #if TROUBLESHOOTHB
     unsigned long totalpasses = 0;
     #endif
     #define HBRATIO 75
-    //int rate = time in seconds for each (double) pump
-    byte MIN = 0x40;
-    byte MAX = 0xFF;
-    char direction = 5; //char can be negative
-    bool (*comparison)(int, int) = &lt;
-    //byte temp;  //for swapping
+    int MIN = 0x40;
+    int MAX = 0xFF;
+    int direction = 5; //char can be negative
+    bool (*comparison)(int, int) = &lt; //pointer to comparison when switching directions
     int i=0;   //for loops
-    unsigned long then = millis();
-    unsigned int mainPulse = (MAX - MIN) / direction;
-    unsigned int fadePulse = MAX / direction;
-    unsigned int totalPulse = (mainPulse * 2) + (fadePulse * 2);  //total number of passes for light ops
+    /* these next lines calculate the pulse rate for a smooth heartbeat */
+    word mainPulse = (MAX - MIN) / direction;   //calculate the number of steps for the main pulse
+    word fadePulse = MAX / direction;           //number of steps for fading
+    word totalPulse = (mainPulse * 2) + (fadePulse * 2);  //total number of passes for light ops
     float pulseRate = (1000 / 2) / totalPulse; //length of delay for each pass to take up rate
     pulseRate++;  //make up for lost decimal points, take sides with more time
-    int count = 0;
-    int sCase;
+    byte sCase; //switch for 5 cases
+    unsigned long then = millis();  //for timer, get start time
     
     while (timer(then, seconds, &ul_lt))
     {
-        sCase = count % 5;
+        sCase %= 5; //loop between 0-4
         #if TROUBLESHOOTHB
         //Serial.println(count, DEC);
         //Serial.println(times, DEC);
@@ -480,7 +501,7 @@ void HeartBeat(int seconds)
         {
             case 0:
                 //ramp up from zero on first pass
-                for (; i<MIN; i=i+direction)
+                for (; i<MIN; i=i+direction)  //i shouldn't need readjustment
                 {
                     analogWrite(6,  i);
                     analogWrite(9,  i);
@@ -501,7 +522,7 @@ void HeartBeat(int seconds)
         if ((sCase) < 4)  //only pulse for the first half
         {
             for (; (*comparison)(i,MAX); i=i+direction)
-            {
+            { // regular pulse between mid and high, goes both directions
                 analogWrite(6,  i);
                 analogWrite(9,  i);
                 analogWrite(10, i);
@@ -511,17 +532,14 @@ void HeartBeat(int seconds)
                 totalpasses++;
                 #endif  
             }
-            direction = -direction;    //switch directions
+            i = MAX;  //set i for other direction
+            swap(&MIN, &MAX, &direction);
             comparison = (direction < 0) ? &gt : &lt;
-            i = MAX;
-            MAX = MIN;
-            MIN = i;
         }
         else
-        {
+        { //turn off all lights for second half
             AllOff();
-            //delay((rate*1000)/2);
-            delay(analogRead(sensor)/HBRATIO*500);
+            delay(analogRead(sensor)/HBRATIO*500);  //500 = half of 1000
             #if TROUBLESHOOTHB
             if ((sCase) == 4)
             {
@@ -530,7 +548,7 @@ void HeartBeat(int seconds)
             }
             #endif
         }
-        count++;
+        sCase++;  //increase counter
 
     }
 }
@@ -627,4 +645,3 @@ void loop()
       t1 = millis();
       #endif
 }
-
