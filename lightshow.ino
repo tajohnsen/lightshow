@@ -27,6 +27,8 @@
 #define SECONDS 30      //seconds to run each show.
 #include "Morse.h"
 
+typedef void (*Show)(unsigned int);
+
 int isdigit(int);
 int toupper(int);
 size_t strlen(const char *);
@@ -604,11 +606,134 @@ void Blinker(unsigned long seconds)
     }
 }
 
+void FlashX(byte byGrouping)
+{
+    int group; //this will flip between on and off
+    for(byte times=0; times<4; times++)  //do these flashes twice
+    {
+        if (times < 2)
+        {
+            group = 1;  //the first two times, start lowest on
+        }
+        else
+        {
+            group = 0;  //second two times, start with lowest off
+        }
+        for(int pin=0; pin<ledPinSize; pin++)
+        {
+            PinOp(group, pin);
+            if (((pin+1) % (byGrouping)) == 0)
+            {
+                group ^= 1; //flip group bit
+            }
+        }
+        delay(analogRead(sensor));   //sleep between flashes
+        AllOff();
+        delay(analogRead(sensor));   //sleep between flashes
+    }
+}
+
+void MiddleMeet()
+{
+    byte i=0;
+    byte iDir=1;
+    byte o=ledPinSize-1;
+    byte oDir=-1;
+    byte * bArray = calloc(ledPinSize, sizeof(byte));
+    byte bRand = random(4); //random number for 2 bit flags
+    
+    if (bRand & 1)
+    {
+        i=(ledPinSize/2)-1;
+        iDir = -1;
+    }
+    if (bRand & 2)
+    {
+        o=ledPinSize/2;
+        oDir = 1;
+    }
+
+    for (byte pin=0; pin<ledPinSize; pin=pin+2)
+    {
+        bArray[pin]  = i;
+        bArray[pin+1]= o;
+        i += iDir;
+        o += oDir;
+    }
+    if (ledPinSize & 1)
+    {
+        bArray[ledPinSize-1] = (ledPinSize/2);
+    }
+    
+    AllOn();
+    delay(analogRead(sensor));   //sleep between flashes
+    AllOff();
+    delay(analogRead(sensor));   //sleep between flashes
+    AllOn();
+    delay(analogRead(sensor));   //sleep between flashes
+    AllOff();
+    delay(analogRead(sensor));   //sleep between flashes
+    for (int pin=0; pin<ledPinSize; pin=pin+2)
+    {
+        PinOp(1, bArray[pin]);
+        PinOp(1, bArray[pin+1]);
+        delay(analogRead(sensor));   //sleep between flashes
+        PinOp(0, bArray[pin]);
+        PinOp(0, bArray[pin+1]);
+    }
+    delay(analogRead(sensor));   //sleep between flashes
+}
+
+void FlashGroups(unsigned int seconds)
+{
+    //char * ranges = calloc(ledPinSize, sizeof(char));
+    unsigned int then = millis();
+    while(timer(then, seconds, &ul_lt))
+    {
+        for (int i=1; i<=(ledPinSize/2); i++)    //make a list of groupings up to half
+        {
+            FlashX(i);
+            if(timer(then, seconds, &ul_gt))
+            {
+                return;
+            }
+        }
+        MiddleMeet();
+        MiddleMeet();
+    }
+}
+
 void loop()
 {
+    Show shows[] = {  FlashGroups,
+                    Blinker,
+                    HeartBeat,
+                    BinaryCounter,
+                    PotFlip,
+                    Stack,
+                    Linear,
+                    PingPong,
+                    Bogo,
+                    MorseFlash,
+                    NPlusOne
+    };
+    for (int show=0; show<sizeof(shows); show++)
+    {
+        AllOff();
+        shows[show](SECONDS);
+    }
       #if TROUBLESHOOT
       unsigned long t1;
       unsigned long t2;
+      Serial.println("Potentiometer level:");
+      Serial.println(analogRead(sensor), DEC);
+      t1 = millis();
+      #endif
+    FlashGroups(SECONDS);
+      #if TROUBLESHOOT
+      t2 = millis();
+      Serial.println("Groups took:");
+      Serial.println((t2-t1), DEC);
       Serial.println("Potentiometer level:");
       Serial.println(analogRead(sensor), DEC);
       t1 = millis();
