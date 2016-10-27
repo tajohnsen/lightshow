@@ -21,23 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
-#define TROUBLESHOOT 0  //Boolean to show debug statements    
-#define TROUBLESHOOTHB 0  //Boolean to check heartbeat status
-#define SECONDS 30      //seconds to run each show.
-#include "Morse.h"
-
-typedef void (*Show)(unsigned int);
-
-int isdigit(int);
-int toupper(int);
-size_t strlen(const char *);
-
-/* array of pins used in this project.
- * This order sets each PWM capable pin (on most Arduinos) to every other one. */
-byte ledPin[] = {13, 11, 12, 10, 8, 9, 7, 6};//, 4, 5, 2, 3}; 
-byte ledPinSize = sizeof(ledPin);
-int sensor = A3;  // potentiometer analog sensor
+#include "lightshow.h"
 
 void setup() {
     //set all pins to output
@@ -47,8 +31,9 @@ void setup() {
     }
     #if TROUBLESHOOT
     Serial.begin(9600); //for troubleshooting
-    #elif TROUBLESHOOTHB
-    Serial.begin(9600); //for troubleshooting
+    //I can't explain why, but if you have an array of pointers you need Serial.begin to run
+    #elif LINEAR
+    Serial.begin(9600); //linear mode requires this and i don't know why
     #endif
     // use analog0 to seed the random timer
     // ensure A0 is empty!
@@ -207,6 +192,23 @@ void PinRangeOff(int pindex)
         }
         AllOff(); //turn all LEDs off between passes (could do i-j but this saves on space)
     }
+}
+
+inline bool DarkEnough()
+{
+    delay(PHOTOCELLDELAY);
+#if TROUBLESHOOT
+    unsigned int val = analogRead(PHOTOCELL);
+    Serial.print("Photocell reading is currently: ");
+    Serial.println(val, DEC);
+    return (val < THRESHOLD);
+#endif
+    return (analogRead(PHOTOCELL) < THRESHOLD);
+}
+
+void BinaryCounterCaller(unsigned long seconds)
+{
+    BinaryCounter(seconds, true);
 }
 
 //display numbers in binary.
@@ -463,6 +465,11 @@ void MorseFlash(char * sentence)
     }
 }
 
+void Morse(unsigned int seconds)
+{
+    MorseFlash("cq cq de m6tfj");
+}
+
 /*#define HBMIN 0x40
 #define HBMAX 0xFF
 #define DIRECTION 5
@@ -482,10 +489,6 @@ void MorseFlash(char * sentence)
   */
 void HeartBeat(unsigned long seconds)
 {
-    #if TROUBLESHOOTHB
-    unsigned long totalpasses = 0;
-    #endif
-    #define HBRATIO 75
     int MIN = 0x40;
     int MAX = 0xFF;
     int direction = 5; //char can be negative
@@ -503,10 +506,6 @@ void HeartBeat(unsigned long seconds)
     while (timer(then, seconds, &ul_lt))
     {
         sCase %= 5; //loop between 0-4
-        #if TROUBLESHOOTHB
-        //Serial.println(count, DEC);
-        //Serial.println(times, DEC);
-        #endif
         switch(sCase)
         {
             case 0:
@@ -518,9 +517,6 @@ void HeartBeat(unsigned long seconds)
                     analogWrite(10, i);
                     analogWrite(11, i);
                     delay((analogRead(sensor)/HBRATIO)*pulseRate);
-                    #if TROUBLESHOOTHB
-                    totalpasses++;
-                    #endif
                     
                 }
                 MIN = 0x40;
@@ -538,9 +534,6 @@ void HeartBeat(unsigned long seconds)
                 analogWrite(10, i);
                 analogWrite(11, i);
                 delay(analogRead(sensor)/HBRATIO*pulseRate);
-                #if TROUBLESHOOTHB
-                totalpasses++;
-                #endif  
             }
             i = MAX;  //set i for other direction
             swap(&MIN, &MAX, &direction);
@@ -550,16 +543,8 @@ void HeartBeat(unsigned long seconds)
         { //turn off all lights for second half
             AllOff();
             delay(analogRead(sensor)/HBRATIO*500);  //500 = half of 1000
-            #if TROUBLESHOOTHB
-            if ((sCase) == 4)
-            {
-              Serial.println(totalpasses, DEC);
-              totalpasses=0;
-            }
-            #endif
         }
         sCase++;  //increase counter
-
     }
 }
 
@@ -684,7 +669,7 @@ void MiddleMeet()
     delay(analogRead(sensor));   //sleep between flashes
 }
 
-void FlashGroups(unsigned int seconds)
+void FlashGroups(unsigned long seconds)
 {
     //char * ranges = calloc(ledPinSize, sizeof(char));
     unsigned int then = millis();
@@ -705,23 +690,68 @@ void FlashGroups(unsigned int seconds)
 
 void loop()
 {
-    Show shows[] = {  FlashGroups,
+    Show shows[] = {HeartBeat,
+                    FlashGroups,
                     Blinker,
-                    HeartBeat,
-                    BinaryCounter,
+                    BinaryCounterCaller,
                     PotFlip,
                     Stack,
                     Linear,
                     PingPong,
+                    Morse,
                     Bogo,
-                    MorseFlash,
                     NPlusOne
     };
-    for (int show=0; show<sizeof(shows); show++)
+    
+#if RANDOM
+    byte iShow;
+    unsigned long iSeconds;
+      
+#if USEPHOTOCELL
+    while(DarkEnough())
+#else
+    while(1)
+#endif
     {
-        AllOff();
-        shows[show](SECONDS);
+        iShow = random(sizeof(shows)/sizeof(Show));
+        iSeconds=0;
+        iSeconds = random(10,31);
+
+        Serial.print("Doing show ");
+        Serial.print(iShow, DEC);
+        Serial.print(" for ");
+        Serial.print(iSeconds, DEC);
+        Serial.println(" seconds.");
+        Serial.print("Show size is ");
+        Serial.println(sizeof(Show), DEC);
+        Serial.print("Array size is ");
+        Serial.println(sizeof(shows), DEC);
+
+        shows[iShow](iSeconds);
     }
+#endif
+
+#if LINEAR
+#if USEPHOTOCELL
+    while(DarkEnough())
+#else
+    while(1)
+#endif
+    {
+        for (int show=0; show<(sizeof(shows)/sizeof(Show)); show++)
+        {
+            shows[show](SECONDS);
+        }
+    }
+#endif
+
+#if USEPHOTOCELL
+    while(!DarkEnough())
+    {
+      delay(1000);  //Test to see if it's dark enough every second.
+    }
+#endif
+
       #if TROUBLESHOOT
       unsigned long t1;
       unsigned long t2;
